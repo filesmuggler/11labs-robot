@@ -1,0 +1,4 @@
+.env
+fastapi-robot-backened/__pycache__/
+fastapi-robot-backened/venv/
+fastapi-robot-backened/.env
