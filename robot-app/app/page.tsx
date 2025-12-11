@@ -69,9 +69,26 @@ export default function RobotDisplay() {
 
       // Start ElevenLabs conversation
       if (mode === 'guess') {
-        // GUESS mode: agent with tools
+        // GUESS mode: Agent does NOT know character, asks questions (user answers)
+        // No character variable, no tools needed
         await conversation.startSession({
           signedUrl: data.signedUrl,
+        })
+      } else {
+        // TALK mode: Agent KNOWS character, answers with yes/no using tools
+        // User asks questions, agent answers with robotYes/robotNo gestures
+        console.log("Detecting character from camera...")
+        const characterResponse = await fetch('/api/robot/camera/detect-character', { method: 'POST' })
+        const characterData = await characterResponse.json()
+
+        const detectedCharacter = characterData.character || 'unknown'
+        console.log("Detected character:", detectedCharacter)
+
+        await conversation.startSession({
+          signedUrl: data.signedUrl,
+          dynamicVariables: {
+            character: detectedCharacter,
+          },
           clientTools: {
             robotYes: async () => {
               console.log("GESTURE: YES")
@@ -82,11 +99,6 @@ export default function RobotDisplay() {
               await fetch('/api/robot/gesture/no', { method: 'POST' })
             },
           },
-        })
-      } else {
-        // TALK mode: simple conversation, no tools
-        await conversation.startSession({
-          signedUrl: data.signedUrl,
         })
       }
 
@@ -151,14 +163,14 @@ export default function RobotDisplay() {
                 className="px-8 py-4 rounded-xl bg-purple-600/20 text-purple-400 border border-purple-500/50 hover:bg-purple-600/40 transition-all duration-300 font-semibold text-lg"
               >
                 🎯 GUESS
-                <span className="block text-xs text-purple-300/70 mt-1">You guess</span>
+                <span className="block text-xs text-purple-300/70 mt-1">Robot guesses</span>
               </button>
               <button
                 onClick={() => startSession('talk')}
                 className="px-8 py-4 rounded-xl bg-blue-600/20 text-blue-400 border border-blue-500/50 hover:bg-blue-600/40 transition-all duration-300 font-semibold text-lg"
               >
                 💬 TALK
-                <span className="block text-xs text-blue-300/70 mt-1">Robot guesses</span>
+                <span className="block text-xs text-blue-300/70 mt-1">You guess</span>
               </button>
             </div>
           </>
