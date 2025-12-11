@@ -4,4 +4,11 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "elevenlabs>=2.25.0",
+    "fastapi>=0.124.0",
+    "mcp>=1.23.1",
+    "rpi-ws281x>=5.0.0",
+    "uvicorn>=0.38.0",
+    "smbus2>=0.5.0",
+]
