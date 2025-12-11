@@ -1,14 +1,17 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
 import uvicorn
 import time
 import base64
 import json
 import os
+import threading
 
 import cv2
 from dotenv import load_dotenv
 from openai import OpenAI
+from picamera2 import Picamera2
 
 from lib.PCA9685 import PCA9685
 from lib.alphabotlib.ws2812 import get_strip, colorWipe
@@ -17,7 +20,50 @@ from rpi_ws281x import Color
 
 load_dotenv()
 
-app = FastAPI()
+# ============ Camera Configuration ============
+CAMERA_CONFIG = {
+    "width": 480,
+    "height": 480,
+}
+
+# ============ Camera State ============
+class CameraState:
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.picam2 = None
+        self.current_frame = None  # BGR frame
+        self.frame_time = 0
+
+camera_state = CameraState()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Startup and shutdown - inicjalizacja kamery."""
+    print("Starting camera...")
+    
+    try:
+        camera_state.picam2 = Picamera2()
+        config = camera_state.picam2.create_preview_configuration(
+            main={"size": (CAMERA_CONFIG["width"], CAMERA_CONFIG["height"]), "format": "RGB888"}
+        )
+        camera_state.picam2.configure(config)
+        camera_state.picam2.start()
+        print(f"Camera ready! Resolution: {CAMERA_CONFIG['width']}x{CAMERA_CONFIG['height']}")
+    except Exception as e:
+        print(f"Failed to init camera: {e}")
+        camera_state.picam2 = None
+    
+    yield
+    
+    # Shutdown
+    print("Shutting down camera...")
+    if camera_state.picam2:
+        camera_state.picam2.stop()
+    print("Camera stopped.")
+
+
+app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -221,31 +267,64 @@ def gesture_no():
 
 def capture_frames(num_frames: int = 8, delay: float = 0.15) -> list[bytes]:
     """
-    Przechwytuje klatki z kamery.
+    Przechwytuje klatki z kamery Picamera2.
     """
-    cap = cv2.VideoCapture(0)
-    
-    if not cap.isOpened():
-        raise RuntimeError("Nie można otworzyć kamery!")
+    if not camera_state.picam2:
+        raise RuntimeError("Kamera nie jest zainicjalizowana!")
     
     frames = []
     
-    # Daj kamerze czas na rozgrzewkę
-    time.sleep(0.5)
-    
     for i in range(num_frames):
-        ret, frame = cap.read()
-        if not ret:
+        try:
+            # Capture frame from Picamera2
+            frame = camera_state.picam2.capture_array()
+            if frame is None:
+                continue
+            
+            # Convert RGB to BGR for OpenCV
+            frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+            
+            # Update current frame state
+            with camera_state.lock:
+                camera_state.current_frame = frame_bgr.copy()
+                camera_state.frame_time = time.time()
+            
+            # Konwertuj do JPEG
+            _, buffer = cv2.imencode('.jpg', frame_bgr, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            frames.append(buffer.tobytes())
+            
+            time.sleep(delay)
+        except Exception as e:
+            print(f"Frame capture error: {e}")
             continue
-        
-        # Konwertuj do JPEG
-        _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
-        frames.append(buffer.tobytes())
-        
-        time.sleep(delay)
     
-    cap.release()
     return frames
+
+
+@app.get("/image")
+async def get_image():
+    """Pobierz aktualną klatkę z kamery jako JPEG."""
+    if not camera_state.picam2:
+        raise HTTPException(status_code=503, detail="Kamera nie jest zainicjalizowana")
+    
+    try:
+        frame = camera_state.picam2.capture_array()
+        if frame is None:
+            raise HTTPException(status_code=503, detail="Brak klatki z kamery")
+        
+        # Convert RGB to BGR for OpenCV encoding
+        frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+        
+        # Update state
+        with camera_state.lock:
+            camera_state.current_frame = frame_bgr.copy()
+            camera_state.frame_time = time.time()
+        
+        # Encode as JPEG
+        _, jpeg = cv2.imencode('.jpg', frame_bgr, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        return Response(content=jpeg.tobytes(), media_type="image/jpeg")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Błąd kamery: {str(e)}")
 
 
 def encode_image_to_base64(image_bytes: bytes) -> str:
