@@ -34,6 +34,7 @@ export function AvatarSection({
   const [emotion, setEmotion] = useState<EmotionType>("neutral");
   const [hasInteracted, setHasInteracted] = useState(false);
   const [audioSource, setAudioSource] = useState<AudioSource>("mic");
+  const [hasMounted, setHasMounted] = useState(false);
 
   const {
     viseme,
@@ -43,6 +44,11 @@ export function AvatarSection({
     stopLipsync,
     systemAudioSupport,
   } = useLipsync({ sensitivity: 0.5 });
+
+  // Track client-side mount to avoid hydration mismatch
+  useEffect(() => {
+    setHasMounted(true);
+  }, []);
 
   // Notify parent of changes
   useEffect(() => {
@@ -195,13 +201,13 @@ export function AvatarSection({
               </button>
               <button
                 onClick={() => handleSourceChange("system")}
-                disabled={!systemAudioSupport.supported}
+                disabled={hasMounted && !systemAudioSupport.supported}
                 className={cn(
                   "flex items-center gap-2 px-4 py-2 rounded-lg transition-colors",
                   audioSource === "system"
                     ? "bg-primary-500/20 text-primary-400 border border-primary-500/50"
                     : "text-gray-400 hover:text-white hover:bg-white/5",
-                  !systemAudioSupport.supported && "opacity-50 cursor-not-allowed"
+                  hasMounted && !systemAudioSupport.supported && "opacity-50 cursor-not-allowed"
                 )}
               >
                 <Monitor className="w-4 h-4" />
