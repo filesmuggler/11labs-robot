@@ -1,14 +1,14 @@
 "use client";
 
-import { forwardRef, type HTMLAttributes, type ReactNode } from "react";
-import { motion } from "framer-motion";
+import { forwardRef, type ReactNode } from "react";
+import { motion, type HTMLMotionProps } from "framer-motion";
 import { cn } from "@/lib/utils";
 
 type CardVariant = "elevated" | "glass" | "outline";
 type CardHover = "lift" | "glow" | "none";
 type CardPadding = "none" | "sm" | "md" | "lg" | "xl";
 
-interface CardProps extends HTMLAttributes<HTMLDivElement> {
+interface CardProps extends Omit<HTMLMotionProps<"div">, "children"> {
   variant?: CardVariant;
   hover?: CardHover;
   padding?: CardPadding;
