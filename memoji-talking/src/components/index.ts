@@ -1,0 +1,7 @@
+export { TalkingFace, default } from './TalkingFace'
+export type { TalkingFaceProps } from './TalkingFace'
+export { FaceBase } from './FaceBase'
+export { Eyes } from './Eyes'
+export { Eyebrows } from './Eyebrows'
+export { Mouth } from './Mouth'
+export { Extras } from './Extras'
