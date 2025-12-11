@@ -2,10 +2,20 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 import time
+import base64
+import json
+import os
+
+import cv2
+from dotenv import load_dotenv
+from openai import OpenAI
+
 from lib.PCA9685 import PCA9685
 from lib.alphabotlib.ws2812 import get_strip, colorWipe
 from lib.alphabotlib.AlphaBot2 import AlphaBot2
 from rpi_ws281x import Color
+
+load_dotenv()
 
 app = FastAPI()
 
@@ -205,3 +215,167 @@ def gesture_no():
         if alphabot:
             alphabot.stop()
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============== CAMERA / VISION ENDPOINTS ==============
+
+def capture_frames(num_frames: int = 8, delay: float = 0.15) -> list[bytes]:
+    """
+    Przechwytuje klatki z kamery.
+    """
+    cap = cv2.VideoCapture(0)
+    
+    if not cap.isOpened():
+        raise RuntimeError("Nie można otworzyć kamery!")
+    
+    frames = []
+    
+    # Daj kamerze czas na rozgrzewkę
+    time.sleep(0.5)
+    
+    for i in range(num_frames):
+        ret, frame = cap.read()
+        if not ret:
+            continue
+        
+        # Konwertuj do JPEG
+        _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+        frames.append(buffer.tobytes())
+        
+        time.sleep(delay)
+    
+    cap.release()
+    return frames
+
+
+def encode_image_to_base64(image_bytes: bytes) -> str:
+    """Konwertuje bytes obrazu do base64"""
+    return base64.b64encode(image_bytes).decode('utf-8')
+
+
+def detect_character(frames: list[bytes]) -> dict:
+    """
+    Wysyła klatki do GPT-4o-mini i sprawdza spójność odczytanego tekstu.
+    
+    Returns:
+        dict z kluczami: success, character, confidence, message
+    """
+    client = OpenAI()
+    
+    # Wybierz 4-5 klatek rozłożonych równomiernie
+    if len(frames) >= 5:
+        indices = [0, len(frames)//4, len(frames)//2, 3*len(frames)//4, -1]
+        selected_frames = [frames[i] for i in indices]
+    else:
+        selected_frames = frames
+    
+    content = [
+        {
+            "type": "text",
+            "text": """Analizujesz klatki z gry "Czółko" (Who Am I / Heads Up).
+
+                        Na zdjęciach jest osoba z kartką na czole lub przy czole. Na kartce jest napisane imię/nazwa postaci.
+
+                        ZADANIE:
+                        1. Przeanalizuj KAŻDĄ klatkę osobno
+                        2. Spróbuj odczytać tekst z kartki na każdej klatce
+                        3. Sprawdź czy tekst jest SPÓJNY (taki sam) na co najmniej 3 klatkach
+
+                        Odpowiedz w formacie JSON:
+                        {
+                            "detected_texts": ["tekst1", "tekst2", ...],
+                            "consensus": true/false,
+                            "character": "NAZWA",
+                            "confidence": "high/medium/low",
+                            "issue": "opis problemu"
+                        }
+
+                        WAŻNE: Zwróć TYLKO JSON, bez markdown, bez komentarzy."""
+        }
+    ]
+    
+    for frame in selected_frames:
+        base64_image = encode_image_to_base64(frame)
+        content.append({
+            "type": "image_url",
+            "image_url": {
+                "url": f"data:image/jpeg;base64,{base64_image}",
+                "detail": "low"
+            }
+        })
+    
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": content}],
+        max_tokens=300
+    )
+    
+    # Parsuj JSON z odpowiedzi
+    response_text = response.choices[0].message.content.strip()
+    
+    # Usuń markdown jeśli model go dodał
+    if response_text.startswith("```"):
+        response_text = response_text.split("```")[1]
+        if response_text.startswith("json"):
+            response_text = response_text[4:]
+    
+    try:
+        result = json.loads(response_text)
+    except json.JSONDecodeError:
+        return {
+            "success": False,
+            "character": None,
+            "message": f"Błąd parsowania odpowiedzi: {response_text[:100]}"
+        }
+    
+    # Przygotuj wynik
+    if result.get("consensus") and result.get("character"):
+        return {
+            "success": True,
+            "character": result["character"],
+            "confidence": result.get("confidence", "unknown"),
+            "detected_texts": result.get("detected_texts", []),
+            "message": "Postać rozpoznana!"
+        }
+    else:
+        return {
+            "success": False,
+            "character": None,
+            "detected_texts": result.get("detected_texts", []),
+            "message": result.get("issue", "Nie udało się uzyskać spójnego odczytu z kilku klatek")
+        }
+
+
+@app.post("/camera/detect-character")
+def camera_detect_character(num_frames: int = 8, delay: float = 0.15):
+    """
+    Endpoint do gry w Czółko - odczytuje tekst z kartki na czole.
+    
+    Przechwytuje klatki z kamery i używa GPT-4o-mini Vision do odczytania tekstu.
+    
+    Args:
+        num_frames: Liczba klatek do przechwycenia (domyślnie 8)
+        delay: Opóźnienie między klatkami w sekundach (domyślnie 0.15)
+    
+    Returns:
+        dict z kluczami: success, character, confidence, detected_texts, message
+    """
+    if not os.getenv("OPENAI_API_KEY"):
+        raise HTTPException(status_code=500, detail="Brak OPENAI_API_KEY w zmiennych środowiskowych!")
+    
+    try:
+        # Przechwytywanie klatek
+        frames = capture_frames(num_frames=num_frames, delay=delay)
+        
+        if len(frames) < 3:
+            raise HTTPException(status_code=500, detail="Za mało klatek! Sprawdź kamerę.")
+        
+        # Analiza obrazów
+        result = detect_character(frames)
+        
+        return result
+        
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=f"Błąd kamery: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Błąd: {str(e)}")

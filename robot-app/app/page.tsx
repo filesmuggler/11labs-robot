@@ -25,7 +25,6 @@ export default function RobotDisplay() {
     },
     onMessage: (message) => {
       console.log('Message:', message)
-      // Update emotion based on message type if available
     },
     onError: (error) => {
       console.error('ElevenLabs Error:', error)
@@ -40,7 +39,6 @@ export default function RobotDisplay() {
       if (conversation.isSpeaking) {
         setEmotion(EMOTION_TYPES.happy)
       } else {
-        // Agent is listening/thinking
         setEmotion(EMOTION_TYPES.thinking)
       }
     }
@@ -56,7 +54,7 @@ export default function RobotDisplay() {
       setConnectionStatus('connecting')
       setEmotion(EMOTION_TYPES.thinking)
 
-      // Request microphone permission (required for ElevenLabs to hear user)
+      // Request microphone permission
       await navigator.mediaDevices.getUserMedia({ audio: true })
 
       // Get signed URL from API
@@ -67,13 +65,22 @@ export default function RobotDisplay() {
         throw new Error('Failed to get signed URL')
       }
 
-      // Start ElevenLabs conversation
+      // Start ElevenLabs conversation with client tools
       await conversation.startSession({
         signedUrl: data.signedUrl,
+        clientTools: {
+          robotYes: async () => {
+            console.log("GESTURE: YES")
+            await fetch('/api/robot/gesture/yes', { method: 'POST' })
+          },
+          robotNo: async () => {
+            console.log("GESTURE: NO")
+            await fetch('/api/robot/gesture/no', { method: 'POST' })
+          },
+        },
       })
 
       // Start system audio capture for lip sync
-      // This captures the audio output (agent's voice)
       try {
         await startLipsync('system')
       } catch (e) {
@@ -92,7 +99,6 @@ export default function RobotDisplay() {
 
   // Auto-start on mount
   useEffect(() => {
-    // Small delay to ensure component is fully mounted
     const timer = setTimeout(() => {
       startSession()
     }, 500)
