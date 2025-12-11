@@ -1,0 +1,137 @@
+/**
+ * memoji-talking Styles
+ * Includes transitions, animations, and responsive behaviors
+ */
+
+.talking-face {
+  position: relative;
+  display: inline-block;
+}
+
+.talking-face__svg {
+  display: block;
+  animation: breathing 3s ease-in-out infinite;
+}
+
+/* Active state - subtle bobbing when audio is active */
+.talking-face--active .talking-face__svg {
+  animation: bobbing 0.6s ease-in-out infinite;
+}
+
+/* Glow effect when active */
+.talking-face--active::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 110%;
+  height: 110%;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(66, 165, 245, 0.3) 0%, transparent 70%);
+  animation: pulse-glow 1.5s ease-in-out infinite;
+  z-index: -1;
+}
+
+/* Breathing animation for idle state */
+@keyframes breathing {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.02);
+  }
+}
+
+/* Bobbing animation for active state */
+@keyframes bobbing {
+  0%, 100% {
+    transform: translateY(0) scale(1);
+  }
+  50% {
+    transform: translateY(-2px) scale(1.02);
+  }
+}
+
+/* Pulsing glow animation */
+@keyframes pulse-glow {
+  0%, 100% {
+    opacity: 0.5;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  50% {
+    opacity: 0.8;
+    transform: translate(-50%, -50%) scale(1.05);
+  }
+}
+
+/* Mouth transition optimization */
+.mouth-shape {
+  will-change: opacity;
+}
+
+/* Eyes transition for emotion changes */
+.eyes {
+  transition: all 200ms ease-out;
+}
+
+/* Eyebrows transition for emotion changes */
+.eyebrows {
+  transition: all 200ms ease-out;
+}
+
+/* Extras (blush, tears) fade in/out */
+.extras ellipse,
+.extras path {
+  transition: opacity 300ms ease-out;
+}
+
+/* Debug info styling */
+.talking-face__debug {
+  position: absolute;
+  bottom: -30px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 12px;
+  font-family: monospace;
+  font-size: 10px;
+  color: #666;
+  white-space: nowrap;
+}
+
+.talking-face__debug span {
+  background: rgba(0, 0, 0, 0.05);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  .talking-face__svg {
+    animation: none;
+  }
+
+  .talking-face--active .talking-face__svg {
+    animation: none;
+  }
+
+  .talking-face--active::before {
+    animation: none;
+    opacity: 0.5;
+  }
+
+  .mouth-shape {
+    transition: opacity 0ms;
+  }
+
+  .eyes,
+  .eyebrows {
+    transition: none;
+  }
+
+  .extras ellipse,
+  .extras path {
+    transition: none;
+  }
+}
